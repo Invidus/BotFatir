@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "botfatir"
+version = "0.1.0"
+description = "Telegram bot for new apartment listings in Kazan"
+requires-python = ">=3.10"
+dependencies = [
+    "aiogram>=3.13,<4",
+    "httpx>=0.27,<1",
+    "aiosqlite>=0.20,<1",
+    "apscheduler>=3.10,<4",
+    "pyyaml>=6.0,<7",
+    "shapely>=2.0,<3",
+    "python-dotenv>=1.0,<2",
+]
+
+[project.scripts]
+botfatir = "botfatir.__main__:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]

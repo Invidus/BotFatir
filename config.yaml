@@ -1,0 +1,30 @@
+search:
+  city: "Казань"
+  max_price: 11000000
+  rooms: [2, 3]
+  exclude_first_floor: true
+  exclude_last_floor: true
+  geojson_path: "data/search_zone.geojson"
+
+  # Районы для предфильтра на площадках (дополнительно к полигону)
+  districts:
+    - "Вахитовский"
+    - "Советский"
+    - "Ново-Савиновский"
+    - "Кировский"
+
+scraper:
+  poll_interval_minutes: 10
+  request_delay_seconds: 2
+  max_pages_per_source: 3
+  timeout_seconds: 30
+
+sources:
+  cian:
+    enabled: true
+    region_id: 4777
+  avito:
+    enabled: true
+    location_id: 650400
+  domclick:
+    enabled: true

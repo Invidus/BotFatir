@@ -1,0 +1,16 @@
+[Unit]
+Description=BotFatir apartment monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botfatir
+WorkingDirectory=/opt/BotFatir
+ExecStart=/opt/BotFatir/.venv/bin/python -m botfatir
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
