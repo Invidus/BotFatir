@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import datetime
 
 from botfatir.models import Listing, Source
@@ -10,48 +12,90 @@ logger = logging.getLogger(__name__)
 
 DOMCLICK_OFFERS_URL = "https://offers-service.domclick.ru/offers/v2/offers"
 DOMCLICK_SUGGESTS_URL = "https://offers-service.domclick.ru/research/v1/suggests"
+GEO_SUGGESTS_URL = "https://geo-service.domclick.ru/v1/suggestions"
+
+# ФИАС города Казань + запасные GUID
+KAZAN_GUID_FALLBACKS = (
+    "93b3df57-79b4-4b59-8e81-04924d5c4ae1",
+    "0c4f1e77-1a8e-4b93-9744-5d0536d5c3b2",
+)
+
+KAZAN_SEARCH_PAGE = (
+    "https://kazan.domclick.ru/search"
+    "?deal_type=sale&category=living&offer_type=flat&sort=created&sort_dir=desc"
+)
 
 
 class DomclickScraper(BaseScraper):
     name = "domclick"
-    _kazan_guid: str | None = None
+
+    def _headers(self, client) -> dict:
+        return {
+            **client.headers,
+            "Referer": "https://domclick.ru/",
+            "Origin": "https://domclick.ru",
+        }
+
+    async def _try_suggests(self, client, url: str, params: dict) -> str | None:
+        try:
+            resp = await client.get(url, params=params, headers=self._headers(client))
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            items = data if isinstance(data, list) else data.get("suggests") or data.get("items") or []
+            for item in items:
+                name = (item.get("name") or item.get("display_name") or item.get("title") or "").lower()
+                guid = item.get("guid") or item.get("id") or item.get("addressGuid")
+                if guid and ("казан" in name or item.get("kind") == "locality"):
+                    return str(guid)
+        except Exception:
+            logger.debug("domclick suggests %s failed", url, exc_info=True)
+        return None
 
     async def _resolve_kazan_guid(self, client) -> str | None:
-        if self._kazan_guid:
-            return self._kazan_guid
+        configured = self.config.sources.domclick_address_guid
+        if configured:
+            return configured
 
-        try:
-            resp = await client.get(
-                DOMCLICK_SUGGESTS_URL,
-                params={"query": self.config.search.city, "type": "geo"},
-                headers={
-                    **client.headers,
-                    "Referer": "https://domclick.ru/",
-                    "Origin": "https://domclick.ru",
-                },
-            )
-            if resp.status_code != 200:
-                logger.warning("domclick: suggests failed %s", resp.status_code)
-                return None
+        for url, params in (
+            (DOMCLICK_SUGGESTS_URL, {"query": self.config.search.city, "type": "geo"}),
+            (GEO_SUGGESTS_URL, {"query": self.config.search.city}),
+            (GEO_SUGGESTS_URL, {"text": self.config.search.city}),
+        ):
+            guid = await self._try_suggests(client, url, params)
+            if guid:
+                logger.info("domclick: resolved Kazan guid via %s", url)
+                return guid
 
-            data = resp.json()
-            items = data if isinstance(data, list) else data.get("suggests") or []
-
-            for item in items:
-                name = (item.get("name") or item.get("display_name") or "").lower()
-                guid = item.get("guid") or item.get("id")
-                if guid and "казан" in name:
-                    self._kazan_guid = str(guid)
-                    return self._kazan_guid
-        except Exception:
-            logger.exception("domclick: suggests error")
+        for guid in KAZAN_GUID_FALLBACKS:
+            logger.info("domclick: trying fallback guid %s", guid)
+            if await self._probe_guid(client, guid):
+                return guid
 
         return None
 
-    def _base_params(self, offset: int) -> dict:
+    async def _probe_guid(self, client, guid: str) -> bool:
+        try:
+            resp = await client.get(
+                DOMCLICK_OFFERS_URL,
+                params={
+                    "address": guid,
+                    "limit": "1",
+                    "offset": "0",
+                    "deal_type": "sale",
+                    "category": "living",
+                    "offer_type": "flat",
+                },
+                headers=self._headers(client),
+            )
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    def _base_params(self, offset: int, address_guid: str) -> dict:
         cfg = self.config
-        rooms = ",".join(str(r) for r in cfg.search.rooms)
         params: dict = {
+            "address": address_guid,
             "offset": str(offset),
             "limit": "30",
             "sort": "created",
@@ -59,62 +103,32 @@ class DomclickScraper(BaseScraper):
             "deal_type": "sale",
             "category": "living",
             "offer_type": "flat",
-            "rooms": rooms,
+            "rooms": ",".join(str(r) for r in cfg.search.rooms),
             "price_lte": str(cfg.search.max_price),
         }
         if cfg.search.exclude_first_floor:
             params["floor_ne"] = "1"
         return params
 
-    def _build_params_bbox(self, offset: int) -> dict:
-        bbox = self.config.sources.domclick_bbox
-        params = self._base_params(offset)
-        params.update(
-            {
-                "sw_lat": str(bbox.get("sw_lat", 55.73)),
-                "sw_lon": str(bbox.get("sw_lon", 49.06)),
-                "ne_lat": str(bbox.get("ne_lat", 55.84)),
-                "ne_lon": str(bbox.get("ne_lon", 49.23)),
-            }
-        )
-        return params
-
-    def _build_params_address(self, offset: int, address_guid: str) -> dict:
-        params = self._base_params(offset)
-        params["address"] = address_guid
-        return params
-
-    async def fetch(self, client) -> list[Listing]:
-        if not self.config.sources.domclick_enabled:
-            return []
-
-        address_guid = await self._resolve_kazan_guid(client)
-        use_bbox = address_guid is None
-        if use_bbox:
-            logger.info("domclick: using bbox fallback for Kazan")
-
+    async def _fetch_via_api(self, client, address_guid: str) -> list[Listing]:
         all_listings: list[Listing] = []
         max_pages = self.config.scraper.max_pages_per_source
         limit = 30
 
         for page in range(max_pages):
             await self._delay()
-            offset = page * limit
-            if use_bbox:
-                params = self._build_params_bbox(offset)
-            else:
-                params = self._build_params_address(offset, address_guid)
-
             resp = await client.get(
                 DOMCLICK_OFFERS_URL,
-                params=params,
-                headers={
-                    **client.headers,
-                    "Referer": "https://domclick.ru/",
-                    "Origin": "https://domclick.ru",
-                },
+                params=self._base_params(page * limit, address_guid),
+                headers=self._headers(client),
             )
-            resp.raise_for_status()
+            if resp.status_code in (401, 403):
+                logger.warning("domclick api: %s for address %s", resp.status_code, address_guid)
+                break
+            if resp.status_code != 200:
+                logger.warning("domclick api: unexpected %s", resp.status_code)
+                break
+
             data = resp.json()
             items = data.get("result", {}).get("items") or data.get("items") or []
             if not items:
@@ -127,17 +141,87 @@ class DomclickScraper(BaseScraper):
 
         return all_listings
 
+    async def _fetch_via_html(self, client) -> list[Listing]:
+        try:
+            resp = await client.get(KAZAN_SEARCH_PAGE, headers=self._headers(client))
+            if resp.status_code != 200:
+                logger.warning("domclick html: status %s", resp.status_code)
+                return []
+
+            html = resp.text
+            items: list[dict] = []
+
+            for pattern in (
+                r'<script id="__NEXT_DATA__"[^>]*>(.+?)</script>',
+                r'window\.__PRELOADED_STATE__\s*=\s*(\{.+?\})\s*;',
+            ):
+                match = re.search(pattern, html, re.DOTALL)
+                if match:
+                    try:
+                        data = json.loads(match.group(1))
+                        items = self._extract_items_from_json(data)
+                        if items:
+                            break
+                    except json.JSONDecodeError:
+                        continue
+
+            listings = []
+            for item in items:
+                listing = self._parse_item(item)
+                if listing:
+                    listings.append(listing)
+            return listings
+        except Exception:
+            logger.exception("domclick html fallback failed")
+            return []
+
+    def _extract_items_from_json(self, data: object) -> list[dict]:
+        found: list[dict] = []
+
+        def walk(obj: object) -> None:
+            if isinstance(obj, dict):
+                if "price" in obj and ("rooms" in obj or "area" in obj) and ("id" in obj or "offer_id" in obj):
+                    found.append(obj)
+                for v in obj.values():
+                    walk(v)
+            elif isinstance(obj, list):
+                for v in obj:
+                    walk(v)
+
+        walk(data)
+        return found[:100]
+
+    async def fetch(self, client) -> list[Listing]:
+        if not self.config.sources.domclick_enabled:
+            return []
+
+        try:
+            address_guid = await self._resolve_kazan_guid(client)
+            if address_guid:
+                listings = await self._fetch_via_api(client, address_guid)
+                if listings:
+                    return listings
+                logger.warning("domclick api returned 0, trying HTML fallback")
+
+            listings = await self._fetch_via_html(client)
+            if not listings:
+                logger.warning("domclick: no listings (API/HTML blocked from this IP)")
+            return listings
+        except Exception:
+            logger.exception("domclick: fetch failed")
+            return []
+
     def _parse_item(self, item: dict) -> Listing | None:
         try:
-            offer_id = str(item.get("id") or item.get("offer_id") or "")
+            offer_id = str(item.get("id") or item.get("offer_id") or item.get("offerId") or "")
             if not offer_id:
                 return None
 
-            price = int(item.get("price") or item.get("sale_price") or 0)
+            price = int(item.get("price") or item.get("sale_price") or item.get("salePrice") or 0)
             rooms = item.get("rooms")
             area = item.get("area") or item.get("square")
             floor = item.get("floor")
-            floors_total = item.get("floors") or item.get("floors_count")
+            floors_total = item.get("floors") or item.get("floors_count") or item.get("totalFloors")
 
             if self.config.search.exclude_last_floor:
                 if floor is not None and floors_total is not None:
@@ -146,27 +230,31 @@ class DomclickScraper(BaseScraper):
 
             address_obj = item.get("address") or {}
             if isinstance(address_obj, dict):
-                address = address_obj.get("display_name") or address_obj.get("name") or ""
+                address = (
+                    address_obj.get("display_name")
+                    or address_obj.get("name")
+                    or item.get("shortAddress")
+                    or item.get("addressName")
+                    or ""
+                )
                 district = address_obj.get("district") or address_obj.get("suburb")
-                lat = address_obj.get("lat") or address_obj.get("latitude")
-                lon = address_obj.get("lon") or address_obj.get("longitude")
+                lat = address_obj.get("lat") or address_obj.get("latitude") or item.get("latitude")
+                lon = address_obj.get("lon") or address_obj.get("longitude") or item.get("longitude")
             else:
-                address = str(address_obj)
+                address = str(address_obj) or item.get("shortAddress") or ""
                 district = lat = lon = None
 
             path = item.get("path") or item.get("seo", {}).get("path") or ""
-            url = (
-                f"https://domclick.ru/card/{path}"
-                if path
-                else f"https://domclick.ru/card/{offer_id}"
-            )
+            if path and not path.startswith("sale__"):
+                path = f"sale__flat__{offer_id}"
+            url = f"https://domclick.ru/card/{path}" if path else f"https://domclick.ru/card/sale__flat__{offer_id}"
 
             photos = item.get("photos") or []
             photo_url = photos[0] if photos else None
             if isinstance(photo_url, dict):
                 photo_url = photo_url.get("url")
 
-            published = item.get("published_at") or item.get("created")
+            published = item.get("published_at") or item.get("created") or item.get("publishedAt")
             published_at = None
             if published:
                 try:

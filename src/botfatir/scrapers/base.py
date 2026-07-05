@@ -33,6 +33,6 @@ class BaseScraper(ABC):
             return listings
         except Exception:
             logger.exception("%s: fetch failed", self.name)
-            raise
+            return []
         finally:
             await client.close()

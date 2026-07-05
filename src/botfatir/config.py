@@ -37,6 +37,7 @@ class SourceConfig:
     avito_location_id: int
     domclick_enabled: bool
     domclick_bbox: dict[str, float]
+    domclick_address_guid: str | None
 
 
 @dataclass
@@ -89,6 +90,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
             avito_location_id=sources_raw["avito"]["location_id"],
             domclick_enabled=sources_raw["domclick"]["enabled"],
             domclick_bbox=sources_raw["domclick"].get("kazan_bbox", {}),
+            domclick_address_guid=sources_raw["domclick"].get("kazan_address_guid"),
         ),
         telegram_bot_token=token,
         telegram_chat_id=chat_id,

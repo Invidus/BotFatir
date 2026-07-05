@@ -27,6 +27,8 @@ sources:
     location_id: 650400
   domclick:
     enabled: true
+    # ФИАС города Казань — если suggests API недоступен
+    kazan_address_guid: "93b3df57-79b4-4b59-8e81-04924d5c4ae1"
     kazan_bbox:
       sw_lat: 55.73
       sw_lon: 49.06
