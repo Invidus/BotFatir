@@ -1,6 +1,6 @@
 search:
   city: "Казань"
-  max_price: 11000000
+  max_price: 10300000
   rooms: [2, 3]
   exclude_first_floor: true
   exclude_last_floor: true

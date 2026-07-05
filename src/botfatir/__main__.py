@@ -42,7 +42,7 @@ async def main() -> None:
     poll_service = PollService(config, db, notifier)
 
     dp = Dispatcher()
-    dp.include_router(setup_handlers(poll_service, db))
+    dp.include_router(setup_handlers(poll_service, db, config))
 
     scheduler = AsyncIOScheduler()
     interval = config.scraper.poll_interval_minutes

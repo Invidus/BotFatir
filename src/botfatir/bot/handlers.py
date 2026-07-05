@@ -6,20 +6,22 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from botfatir.config import AppConfig
 from botfatir.db import Database
 from botfatir.poll import PollService
 
 logger = logging.getLogger(__name__)
 
 
-def setup_handlers(poll_service: PollService, db: Database) -> Router:
+def setup_handlers(poll_service: PollService, db: Database, config: AppConfig) -> Router:
     r = Router()
 
     @r.message(Command("start"))
     async def cmd_start(message: Message) -> None:
+        max_mln = config.search.max_price / 1_000_000
         await message.answer(
             "🏠 <b>BotFatir</b> — мониторинг квартир в Казани\n\n"
-            "Фильтры: 2–3к, до 11 млн ₽, не 1/последний этаж\n"
+            f"Фильтры: 2–3к, до {max_mln:g} млн ₽, не 1/последний этаж\n"
             "Источники: Циан, Авито, Домклик\n\n"
             "Команды:\n"
             "/status — статистика\n"
