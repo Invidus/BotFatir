@@ -6,7 +6,6 @@ search:
   exclude_last_floor: true
   geojson_path: "data/search_zone.geojson"
 
-  # Районы для предфильтра на площадках (дополнительно к полигону)
   districts:
     - "Вахитовский"
     - "Советский"
@@ -28,3 +27,8 @@ sources:
     location_id: 650400
   domclick:
     enabled: true
+    kazan_bbox:
+      sw_lat: 55.73
+      sw_lon: 49.06
+      ne_lat: 55.84
+      ne_lon: 49.23

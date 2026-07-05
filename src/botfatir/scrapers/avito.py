@@ -50,6 +50,8 @@ class AvitoScraper(BaseScraper):
                 headers={
                     **client.headers,
                     "Referer": "https://www.avito.ru/kazan/kvartiry/prodam",
+                    "Origin": "https://www.avito.ru",
+                    "X-Requested-With": "XMLHttpRequest",
                 },
             )
             resp.raise_for_status()

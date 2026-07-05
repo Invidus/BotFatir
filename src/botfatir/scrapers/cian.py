@@ -49,7 +49,7 @@ class CianScraper(BaseScraper):
                     **client.headers,
                     "Content-Type": "application/json",
                     "Origin": "https://kazan.cian.ru",
-                    "Referer": "https://kazan.cian.ru/",
+                    "Referer": "https://kazan.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region=4777",
                 },
             )
             resp.raise_for_status()
