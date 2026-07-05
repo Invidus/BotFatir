@@ -46,10 +46,12 @@ class PollService:
             try:
                 listings = await scraper.run()
                 found = len(listings)
+                passed = 0
 
                 for listing in listings:
                     if not apply_filters(listing, self.config.search):
                         continue
+                    passed += 1
 
                     is_new = await self.db.save_listing(listing)
                     if is_new:
@@ -57,6 +59,14 @@ class PollService:
                         if not self.paused:
                             await self.notifier.send_listing(listing)
                             await self.db.mark_notified(listing.dedup_key)
+
+                logger.info(
+                    "%s: fetched %d, passed filters %d, new %d",
+                    source_name,
+                    found,
+                    passed,
+                    new_count,
+                )
 
             except Exception as exc:
                 error = str(exc)

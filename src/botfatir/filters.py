@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from botfatir.config import SearchConfig
 from botfatir.geo import point_in_zone
-from botfatir.models import Listing
+from botfatir.models import Listing, Source
 
 
 def matches_district(listing: Listing, districts: list[str]) -> bool:
@@ -36,6 +36,9 @@ def apply_filters(listing: Listing, config: SearchConfig) -> bool:
     if listing.lat is not None and listing.lon is not None:
         if not point_in_zone(listing.lat, listing.lon, config.geojson_path):
             return False
+    elif listing.source == Source.AVITO and "казан" in (listing.address or "").lower():
+        # Авито уже ищет по locationId=Казань; координат в списке часто нет
+        pass
     elif not matches_district(listing, config.districts):
         return False
 
