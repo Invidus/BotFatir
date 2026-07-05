@@ -19,9 +19,10 @@ def setup_handlers(poll_service: PollService, db: Database, config: AppConfig) -
     @r.message(Command("start"))
     async def cmd_start(message: Message) -> None:
         max_mln = config.search.max_price / 1_000_000
+        market = "вторичка" if config.search.secondary_only else "все"
         await message.answer(
             "🏠 <b>BotFatir</b> — мониторинг квартир в Казани\n\n"
-            f"Фильтры: 2–3к, до {max_mln:g} млн ₽, не 1/последний этаж\n"
+            f"Фильтры: 2–3к, до {max_mln:g} млн ₽, {market}, не 1/последний этаж\n"
             "Источники: Циан, Авито, Домклик\n\n"
             "Команды:\n"
             "/status — статистика\n"

@@ -18,7 +18,51 @@ def matches_district(listing: Listing, districts: list[str]) -> bool:
     return False
 
 
+def is_new_building(listing: Listing) -> bool:
+    text = f"{listing.title} {listing.address} {listing.url}".lower()
+    keywords = (
+        "новострой",
+        "новостро",
+        "от застройщика",
+        "жилой комплекс",
+        "жк ",
+    )
+    if any(k in text for k in keywords):
+        return True
+    if "novostroyk" in text or "/novostroyka" in text:
+        return True
+
+    raw = listing.raw or {}
+
+    if listing.source == Source.CIAN:
+        if raw.get("fromDeveloper"):
+            return True
+        if raw.get("newbuilding") or raw.get("newBuilding"):
+            return True
+        if raw.get("jk") or raw.get("residentialComplex"):
+            return True
+
+    if listing.source == Source.AVITO:
+        value = raw.get("value") or raw
+        path = (value.get("urlPath") or "").lower()
+        if "novostroyk" in path:
+            return True
+
+    if listing.source == Source.DOMCLICK:
+        if raw.get("isNewBuilding") or raw.get("is_new_building"):
+            return True
+        if raw.get("offer_type") == "layout":
+            return True
+        if raw.get("fromDeveloper") or raw.get("from_developer"):
+            return True
+
+    return False
+
+
 def apply_filters(listing: Listing, config: SearchConfig) -> bool:
+    if config.secondary_only and is_new_building(listing):
+        return False
+
     if listing.price <= 0 or listing.price > config.max_price:
         return False
 

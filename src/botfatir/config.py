@@ -17,6 +17,7 @@ class SearchConfig:
     rooms: list[int]
     exclude_first_floor: bool
     exclude_last_floor: bool
+    secondary_only: bool
     geojson_path: Path
     districts: list[str]
 
@@ -74,6 +75,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
             rooms=search_raw["rooms"],
             exclude_first_floor=search_raw["exclude_first_floor"],
             exclude_last_floor=search_raw["exclude_last_floor"],
+            secondary_only=search_raw.get("secondary_only", True),
             geojson_path=geo_path,
             districts=search_raw["districts"],
         ),

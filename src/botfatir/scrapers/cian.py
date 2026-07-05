@@ -31,6 +31,8 @@ class CianScraper(BaseScraper):
             query["floornf"] = {"type": "term", "value": True}
         if cfg.search.exclude_last_floor:
             query["floornl"] = {"type": "term", "value": True}
+        if cfg.search.secondary_only:
+            query["from_developer"] = {"type": "term", "value": False}
         return {"jsonQuery": query}
 
     async def fetch(self, client) -> list[Listing]:

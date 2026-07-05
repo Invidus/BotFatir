@@ -36,7 +36,9 @@ class AvitoScraper(BaseScraper):
         if room_params:
             params["params[549]"] = ",".join(room_params)
 
-        # Исключение этажей — в filters.py (API Авито не даёт оба фильтра одновременно)
+        if cfg.search.secondary_only:
+            params["params[499]"] = "5254"
+
         return params
 
     async def fetch(self, client) -> list[Listing]:
@@ -53,7 +55,7 @@ class AvitoScraper(BaseScraper):
                 params=self._build_params(page),
                 headers={
                     **client.headers,
-                    "Referer": "https://www.avito.ru/kazan/kvartiry/prodam",
+                    "Referer": "https://www.avito.ru/kazan/kvartiry/prodam/vtorichka",
                     "Origin": "https://www.avito.ru",
                     "X-Requested-With": "XMLHttpRequest",
                 },
