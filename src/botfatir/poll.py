@@ -8,6 +8,7 @@ from aiogram import Bot
 from botfatir.config import AppConfig
 from botfatir.db import Database
 from botfatir.filters import apply_filters
+from botfatir.freshness import is_fresh_enough
 from botfatir.models import Listing
 from botfatir.notifier import Notifier
 from botfatir.scrapers import AvitoScraper, CianScraper, DomclickScraper
@@ -47,25 +48,33 @@ class PollService:
                 listings = await scraper.run()
                 found = len(listings)
                 passed = 0
+                notified = 0
 
                 for listing in listings:
                     if not apply_filters(listing, self.config.search):
                         continue
                     passed += 1
 
-                    is_new = await self.db.save_listing(listing)
-                    if is_new:
-                        new_count += 1
-                        if not self.paused:
-                            await self.notifier.send_listing(listing)
-                            await self.db.mark_notified(listing.dedup_key)
+                    if not is_fresh_enough(listing, self.config.search):
+                        await self.db.save_listing(listing)
+                        continue
 
+                    is_new = await self.db.save_listing(listing)
+                    if not is_new:
+                        continue
+
+                    notified += 1
+                    if not self.paused:
+                        await self.notifier.send_listing(listing)
+                        await self.db.mark_notified(listing.dedup_key)
+
+                new_count = notified
                 logger.info(
-                    "%s: fetched %d, passed filters %d, new %d",
+                    "%s: fetched %d, passed filters %d, notified %d",
                     source_name,
                     found,
                     passed,
-                    new_count,
+                    notified,
                 )
 
             except Exception as exc:

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 
+from botfatir.freshness import is_fresh_enough
 from botfatir.models import Listing, Source
 from botfatir.scrapers.base import BaseScraper
 
@@ -66,10 +68,17 @@ class AvitoScraper(BaseScraper):
             if not items:
                 break
 
+            stale_page = False
             for item in items:
                 listing = self._parse_item(item)
-                if listing:
-                    all_listings.append(listing)
+                if not listing:
+                    continue
+                if not is_fresh_enough(listing, self.config.search):
+                    stale_page = True
+                    break
+                all_listings.append(listing)
+            if stale_page:
+                break
 
         return all_listings
 
@@ -91,6 +100,20 @@ class AvitoScraper(BaseScraper):
             "floor": floor,
             "floors_total": floors_total,
         }
+
+    def _parse_published_at(self, value: dict, item: dict) -> datetime | None:
+        for key in ("sortTimeStamp", "sortDate", "created", "startedAt"):
+            raw = value.get(key) or item.get(key)
+            if raw is None:
+                continue
+            try:
+                if isinstance(raw, (int, float)):
+                    ts = raw / 1000 if raw > 10_000_000_000 else raw
+                    return datetime.fromtimestamp(ts, tz=timezone.utc)
+                return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            except (ValueError, OSError, TypeError):
+                continue
+        return None
 
     def _parse_item(self, item: dict) -> Listing | None:
         try:
@@ -177,6 +200,8 @@ class AvitoScraper(BaseScraper):
                         iter(img.values()), None
                     )
 
+            published_at = self._parse_published_at(value, item)
+
             return Listing(
                 source=Source.AVITO,
                 external_id=item_id,
@@ -192,6 +217,7 @@ class AvitoScraper(BaseScraper):
                 lat=lat,
                 lon=lon,
                 photo_url=photo_url,
+                published_at=published_at,
                 raw=item,
             )
         except Exception:

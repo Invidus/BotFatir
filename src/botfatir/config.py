@@ -18,6 +18,7 @@ class SearchConfig:
     exclude_first_floor: bool
     exclude_last_floor: bool
     secondary_only: bool
+    max_listing_age_hours: int
     geojson_path: Path
     districts: list[str]
 
@@ -76,6 +77,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
             exclude_first_floor=search_raw["exclude_first_floor"],
             exclude_last_floor=search_raw["exclude_last_floor"],
             secondary_only=search_raw.get("secondary_only", True),
+            max_listing_age_hours=int(search_raw.get("max_listing_age_hours", 24)),
             geojson_path=geo_path,
             districts=search_raw["districts"],
         ),

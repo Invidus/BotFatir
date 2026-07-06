@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
+from botfatir.freshness import is_fresh_enough
 from botfatir.models import Listing, Source
 from botfatir.scrapers.base import BaseScraper
 
@@ -33,6 +34,7 @@ class CianScraper(BaseScraper):
             query["floornl"] = {"type": "term", "value": True}
         if cfg.search.secondary_only:
             query["from_developer"] = {"type": "term", "value": False}
+        query["sort"] = {"type": "term", "value": "creation_date_desc"}
         return {"jsonQuery": query}
 
     async def fetch(self, client) -> list[Listing]:
@@ -60,10 +62,17 @@ class CianScraper(BaseScraper):
             if not offers:
                 break
 
+            stale_page = False
             for offer in offers:
                 listing = self._parse_offer(offer)
-                if listing:
-                    all_listings.append(listing)
+                if not listing:
+                    continue
+                if not is_fresh_enough(listing, self.config.search):
+                    stale_page = True
+                    break
+                all_listings.append(listing)
+            if stale_page:
+                break
 
         return all_listings
 
@@ -111,14 +120,22 @@ class CianScraper(BaseScraper):
                     or (photos[0].get("thumbnail2Url"))
                 )
 
-            published = offer.get("creationDate") or offer.get("added")
+            published = (
+                offer.get("creationDate")
+                or offer.get("added")
+                or offer.get("publishDate")
+                or offer.get("addedTimestamp")
+            )
             published_at = None
             if published:
                 try:
-                    published_at = datetime.fromisoformat(
-                        published.replace("Z", "+00:00")
-                    )
-                except ValueError:
+                    if isinstance(published, (int, float)):
+                        published_at = datetime.fromtimestamp(published, tz=timezone.utc)
+                    else:
+                        published_at = datetime.fromisoformat(
+                            str(published).replace("Z", "+00:00")
+                        )
+                except (ValueError, OSError, TypeError):
                     pass
 
             url = f"https://kazan.cian.ru/sale/flat/{offer_id}/"

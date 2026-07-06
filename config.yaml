@@ -5,6 +5,7 @@ search:
   exclude_first_floor: true
   exclude_last_floor: true
   secondary_only: true
+  max_listing_age_hours: 12
   geojson_path: "data/search_zone.geojson"
 
   districts:

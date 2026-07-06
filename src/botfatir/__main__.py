@@ -6,7 +6,6 @@ import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from botfatir.bot.handlers import setup_handlers
 from botfatir.config import load_config
@@ -20,6 +19,22 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 logger = logging.getLogger(__name__)
+
+
+async def poll_loop(poll_service: PollService, interval_minutes: int) -> None:
+    """Опрос каждые N минут после завершения предыдущего цикла."""
+    while True:
+        logger.info("Poll cycle started")
+        try:
+            summary = await poll_service.run_poll()
+            logger.info(
+                "Poll cycle done: %s new notifications, next in %d min",
+                summary["new_total"],
+                interval_minutes,
+            )
+        except Exception:
+            logger.exception("Poll cycle failed")
+        await asyncio.sleep(interval_minutes * 60)
 
 
 async def main() -> None:
@@ -44,27 +59,14 @@ async def main() -> None:
     dp = Dispatcher()
     dp.include_router(setup_handlers(poll_service, db, config))
 
-    scheduler = AsyncIOScheduler()
     interval = config.scraper.poll_interval_minutes
+    asyncio.create_task(poll_loop(poll_service, interval))
 
-    async def scheduled_poll() -> None:
-        logger.info("Scheduled poll started")
-        try:
-            summary = await poll_service.run_poll()
-            logger.info("Scheduled poll done: %s new", summary["new_total"])
-        except Exception:
-            logger.exception("Scheduled poll failed")
-
-    scheduler.add_job(
-        scheduled_poll,
-        "interval",
-        minutes=interval,
-        id="apartment_poll",
-        max_instances=1,
+    logger.info(
+        "BotFatir started. Poll every %d min. Only listings newer than %dh.",
+        interval,
+        config.search.max_listing_age_hours,
     )
-    scheduler.start()
-
-    logger.info("BotFatir started. Poll every %d min.", interval)
     await dp.start_polling(bot)
 
 
